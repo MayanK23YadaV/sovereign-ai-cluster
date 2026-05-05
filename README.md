@@ -78,3 +78,9 @@ Start the `llama-server` on the Head Node, pointing it to your model and the IPs
 
 ## 🤝 Contributing
 This architecture is designed for scalability. Pull requests focusing on improving network latency (MPI/RoCE), implementing declarative IaC (NixOS), or enhancing Peer-to-Peer model distribution (BitTorrent protocol) are highly encouraged.
+
+---
+
+## 👨‍💻 Author
+**MayanK23YadaV**  
+*Building the future of decentralized, sovereign artificial intelligence.*
