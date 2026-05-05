@@ -1,0 +1,189 @@
+---
+# =============================================================================
+# Sovereign AI Lab — Worker Node Provisioning Playbook (Fresh Install Route)
+# Run from Node 01 (Head): ansible-playbook -i /etc/ansible/hosts.ini /etc/ansible/cluster_init.yml
+# =============================================================================
+- name: Provision Worker Nodes from Scratch
+  hosts: workers
+  become: true
+  tasks:
+    # --- IDENTITY & NETWORKING ---
+    - name: Set unique hostname per node
+      hostname:
+        name: "{{ inventory_hostname }}"
+
+    - name: Allow passwordless sudo for the worker user (fixes rsync/synchronize)
+      lineinfile:
+        path: "/etc/sudoers.d/{{ ansible_user }}"
+        line: "{{ ansible_user }} ALL=(ALL) NOPASSWD: ALL"
+        create: yes
+        mode: '0440'
+        validate: 'visudo -cf %s'
+
+    - name: Update /etc/hosts with correct hostname
+      lineinfile:
+        path: /etc/hosts
+        regexp: '^127\.0\.1\.1'
+        line: "127.0.1.1\t{{ inventory_hostname }}"
+
+    # --- DEPENDENCIES & PERFORMANCE ---
+    - name: Install required system packages
+      apt:
+        name: 
+          - cpufrequtils
+          - build-essential
+          - btop
+        state: present
+        update_cache: yes
+
+    - name: Ensure btop config directory exists
+      file:
+        path: "/home/{{ ansible_user }}/.config/btop"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: '0755'
+
+    - name: Set btop update speed to 100ms
+      copy:
+        content: |
+          update_ms = 100
+        dest: "/home/{{ ansible_user }}/.config/btop/btop.conf"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+
+    - name: Disable screen blanking and lock screen in GUI
+      become: true
+      become_user: "{{ ansible_user }}"
+      command: "{{ item }}"
+      environment:
+        DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ ansible_user_uid | default('1000') }}/bus"
+      loop:
+        - gsettings set org.cinnamon.desktop.session idle-delay 0
+        - gsettings set org.cinnamon.desktop.screensaver lock-enabled false
+        - gsettings set org.cinnamon.settings-daemon.plugins.power sleep-display-ac 0
+        - gsettings set org.cinnamon.settings-daemon.plugins.power sleep-inactive-ac-timeout 0
+      ignore_errors: yes
+
+    - name: Disable sleep/suspend at systemd level
+      systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: no
+        masked: yes
+      loop:
+        - sleep.target
+        - suspend.target
+        - hibernate.target
+        - hybrid-sleep.target
+
+    - name: Dynamically find Windows GRUB entry
+      shell: "grep -i 'menuentry .*Windows' /boot/grub/grub.cfg | cut -d\"'\" -f2 | head -n 1"
+      register: windows_grub_entry
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Set GRUB default to Windows
+      lineinfile:
+        path: /etc/default/grub
+        regexp: '^GRUB_DEFAULT='
+        line: 'GRUB_DEFAULT="{{ windows_grub_entry.stdout }}"'
+      when: windows_grub_entry.stdout != ""
+      notify: update grub
+
+    - name: Set CPU governor to performance
+      copy:
+        content: "GOVERNOR=performance"
+        dest: /etc/default/cpufrequtils
+      notify: restart cpufreq
+
+    # --- AI STACK DEPLOYMENT (The "File Transfer") ---
+    - name: Ensure /opt/llama.cpp directory exists
+      file:
+        path: /opt/llama.cpp
+        state: directory
+        mode: '0755'
+
+    - name: Copy pre-compiled llama.cpp from Node 01 to workers
+      # Note: This synchronizes the folder directly from Node 01 to the workers
+      ansible.posix.synchronize:
+        src: /opt/llama.cpp/
+        dest: /opt/llama.cpp/
+        recursive: yes
+        delete: yes
+
+    # --- RPC WORKER SERVICE ---
+    - name: Create llama-rpc systemd service
+      copy:
+        dest: /etc/systemd/system/llama-rpc.service
+        content: |
+          [Unit]
+          Description=Llama.cpp RPC Worker Node
+          After=network.target
+
+          [Service]
+          Type=simple
+          ExecStart=/opt/llama.cpp/build/bin/rpc-server --host 0.0.0.0 --port 50052 -t 14
+          Restart=on-failure
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Enable and start llama-rpc service
+      systemd:
+        name: llama-rpc
+        daemon_reload: yes
+        enabled: yes
+        state: started
+
+    # --- VISUAL IDENTITY ---
+    - name: Disable default MOTD scripts
+      file:
+        path: "/etc/update-motd.d/{{ item }}"
+        mode: '0644'
+      loop:
+        - 10-help-text
+        - 50-motd-news
+        - 80-esm
+        - 88-esm-announce
+        - 91-release-upgrade
+      ignore_errors: yes
+
+    - name: Set Worker Node MOTD banner
+      copy:
+        dest: /etc/motd
+        content: |
+
+          ╔══════════════════════════════════════════════════════════╗
+          ║                                                          ║
+          ║   ██╗    ██╗ ██████╗ ██████╗ ██╗  ██╗███████╗██████╗   ║
+          ║   ██║    ██║██╔═══██╗██╔══██╗██║ ██╔╝██╔════╝██╔══██╗  ║
+          ║   ██║ █╗ ██║██║   ██║██████╔╝█████╔╝ █████╗  ██████╔╝  ║
+          ║   ██║███╗██║██║   ██║██╔══██╗██╔═██╗ ██╔══╝  ██╔══██╗  ║
+          ║   ╚███╔███╔╝╚██████╔╝██║  ██║██║  ██╗███████╗██║  ██║  ║
+          ║    ╚══╝╚══╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝  ║
+          ║                                                          ║
+          ║          🖥️  SOVEREIGN AI LAB — WORKER NODE              ║
+          ║              Role : RPC Compute Worker                   ║
+          ║              Port : 50052 (llama-rpc)                    ║
+          ║                                                          ║
+          ╚══════════════════════════════════════════════════════════╝
+
+    - name: Set GREEN colored PS1 prompt for worker nodes
+      copy:
+        dest: /etc/profile.d/sovereign_prompt.sh
+        content: |
+          # Sovereign AI Lab — Worker Node Prompt (GREEN)
+          export PS1='\[\e[0;32m\][\[\e[1;32m\]WORKER:\h\[\e[0;32m\]]\[\e[0m\] \[\e[1;34m\]\w\[\e[0m\] \$ '
+        mode: '0644'
+
+
+  handlers:
+    - name: restart cpufreq
+      service:
+        name: cpufrequtils
+        state: restarted
+
+    - name: update grub
+      command: update-grub
