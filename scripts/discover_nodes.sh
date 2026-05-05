@@ -9,7 +9,8 @@
 
 set -e
 
-SUBNET="172.16.110.0/24"
+# Use argument if provided, otherwise dynamically calculate local subnet
+SUBNET="${1:-$(ip route | awk '/kernel/ {print $1}' | head -n 1)}"
 HEAD_IP=$(hostname -I | awk '{print $1}')
 INVENTORY="/etc/ansible/hosts.ini"
 SSH_KEY="/root/.ssh/id_ed25519"
