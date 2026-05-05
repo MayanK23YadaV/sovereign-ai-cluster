@@ -1,13 +1,13 @@
 <div align="center">
-  <h1>🧠 Sovereign AI Cluster</h1>
-  <p><strong>Bare-Metal Distributed AI Infrastructure & Orchestration</strong></p>
+  <h1>🏛️ Stoa</h1>
+  <p><strong>The Sovereign Bare-Metal AI Swarm</strong></p>
   <p>A fully automated, self-discovering Swarm architecture designed to distribute large language models (LLMs) across a network of CPU-based worker nodes using <code>llama.cpp</code> RPC.</p>
 </div>
 
 ---
 
 ## 📖 Overview
-The Sovereign AI Cluster is an enterprise-grade automation stack that transforms standard desktop PCs into a unified AI supercomputer. By abandoning traditional, brittle "USB cloning" methods in favor of dynamic network discovery and **Ansible Orchestration**, this repository enables the instant deployment, configuration, and scaling of a 30+ node computing cluster.
+**Stoa** is an enterprise-grade automation stack that transforms standard desktop PCs into a unified AI supercomputer. By abandoning traditional, brittle "USB cloning" methods in favor of dynamic network discovery and **Ansible Orchestration**, this repository enables the instant deployment, configuration, and scaling of a 30+ node computing cluster.
 
 ### 🌟 Proven Features
 Every script and playbook in this repository has been field-tested and proven to work on production hardware:
